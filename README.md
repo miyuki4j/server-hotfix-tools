@@ -71,17 +71,30 @@ jar cf hotfix-patch.jar -C /tmp/classes .
     ├── hotfix-cli.jar
     ├── hotfix-agent.jar
     ├── hotfix-patch.jar
-    └── hotfix-config.json     # { "patchJar": "/opt/gameserver/hotfix/hotfix-patch.jar" }
+    └── hotfix-config.json
 ```
 
-执行：
+`hotfix-config.json` 中 `patchJar` 支持**相对或绝对路径**：
+
+```jsonc
+// 方式 A：相对路径（推荐，三个 jar + config 同目录时最省事）
+{ "patchJar": "hotfix-patch.jar" }
+
+// 方式 B：绝对路径
+{ "patchJar": "/opt/gameserver/hotfix/hotfix-patch.jar" }
+```
+
+> **路径解析规则**：相对路径以 **config 文件所在目录**为基准解析（不是目标 JVM 的工作目录）。
+> 因此只要 `hotfix-cli.jar` / `hotfix-agent.jar` / `hotfix-patch.jar` / `hotfix-config.json` 放在同一目录，
+> 无论 GameServer 从哪里启动都能正确找到。cli 传给它的 `agent.jar` / `config.json` 参数同样支持相对路径（以 cli 运行时的 CWD 为基准）。
+
+执行（推荐：cd 进 hotfix 目录，全用相对参数）：
 
 ```bash
 pid=$(jps | grep GameServer | awk '{print $1}')
-java -jar hotfix/hotfix-cli.jar $pid hotfix/hotfix-agent.jar hotfix/hotfix-config.json
+cd /opt/gameserver/hotfix
+java -jar hotfix-cli.jar $pid hotfix-agent.jar hotfix-config.json
 ```
-
-> `hotfix-config.json` 中 `patchJar` 建议**用绝对路径**：相对路径会以目标 JVM（GameServer）的工作目录为基准解析，容易踩坑。
 
 ## 端到端 demo 验证
 

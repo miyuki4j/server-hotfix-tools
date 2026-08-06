@@ -24,3 +24,5 @@ replay_pid*
 *.log
 *.tmp
 *.bak
+# git pre-commit hook 在某些环境下会泄漏 PID 命名的临时 txt（如 8858.txt），忽略之
+/[0-9]*.txt
