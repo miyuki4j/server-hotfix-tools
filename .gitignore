@@ -1,0 +1,26 @@
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# --- WorkBuddy / AI 工作区元数据 ---
+.workbuddy/
+
+# --- Maven 构建产物 ---
+target/
+build/
+*.versionsBackup
+
+# --- Java ---
+*.class
+*.jar
+!hotfix-tools/**/src/**/*.jar
+hs_err_pid*
+replay_pid*
+
+# --- 日志 / 临时 ---
+*.log
+*.tmp
+*.bak

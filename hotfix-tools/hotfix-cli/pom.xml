@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.zulong.hotfix</groupId>
+        <artifactId>hotfix-tools</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>hotfix-cli</artifactId>
+    <name>hotfix-cli</name>
+    <description>Attach to target JVM and load hotfix agent (shaded, self-contained)</description>
+
+    <dependencies>
+        <!-- Attach API (com.sun.tools.attach.VirtualMachine) 在 JDK 8 的 tools.jar 中。
+             需先执行一次（每台构建机各一次）：
+               mvn install:install-file -Dfile=$JAVA_HOME/lib/tools.jar \
+                   -DgroupId=com.sun -DartifactId=tools -Dversion=1.8 -Dpackaging=jar -DgeneratePom=true
+             将 tools.jar 装入本地 Maven 仓库后，用 compile scope 才能被 maven-shade-plugin 内嵌进 jar，
+             从而 JDK8 下可直接 java -jar 运行（system scope 不会被 shade 打包）。 -->
+        <dependency>
+            <groupId>com.sun</groupId>
+            <artifactId>tools</artifactId>
+            <version>1.8</version>
+            <scope>compile</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>hotfix-cli</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.3</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>false</shadedArtifactAttached>
+                            <artifactSet>
+                                <includes>
+                                    <include>com.sun:tools</include>
+                                </includes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>com.sun:tools</artifact>
+                                    <excludes>
+                                        <!-- tools.jar 被 Oracle 签名，必须剥离签名文件，否则运行期校验失败 -->
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/*.EC</exclude>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <!-- 合并 META-INF/services（AttachProvider 服务发现依赖此文件） -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.zulong.hotfix.cli.HotFixCli</mainClass>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
