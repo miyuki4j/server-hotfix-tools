@@ -9,39 +9,71 @@ import java.nio.file.Files;
  * hotfix-config.json 配置。
  *
  * 配置极简，只有一个字段:
- * <pre>{ "patchJar": "/opt/gameserver/hotfix/hotfix-patch.jar" }</pre>
+ * <pre>{ "patchJar": "hotfix-patch.jar" }</pre>
+ *
+ * patchJar 路径支持相对或绝对：
+ * <ul>
+ *   <li>绝对路径（如 {@code /opt/gameserver/hotfix/hotfix-patch.jar} 或 {@code C:/hotfix/hotfix-patch.jar}）：原样使用</li>
+ *   <li>相对路径（如 {@code hotfix-patch.jar} 或 {@code ../hotfix/hotfix-patch.jar}）：以 config 文件所在目录为基准解析，
+ *       因此只要三个 jar + config 放在同一目录，就可直接写 {@code "patchJar": "hotfix-patch.jar"}，
+ *       无需关心目标 JVM（GameServer）从哪个目录启动</li>
+ * </ul>
  *
  * 为保持 agent jar 零依赖（不引入第三方 JSON 库），这里用极简解析提取 patchJar 值。
  */
 public class HotFixConfig {
 
+    private final File configFile;
+    /** 解析后的绝对路径（相对路径已拼到 config 父目录）。 */
     private final String patchJar;
 
-    private HotFixConfig(String patchJar) {
+    private HotFixConfig(File configFile, String patchJar) {
+        this.configFile = configFile;
         this.patchJar = patchJar;
     }
 
+    /** 解析后的 patchJar 绝对路径。 */
     public String getPatchJar() {
         return patchJar;
     }
 
+    /** config 文件对象（绝对路径 File），便于日志/调试。 */
+    public File getConfigFile() {
+        return configFile;
+    }
+
     /**
-     * @param configPath cli 通过 agentArgs 传入的配置文件路径
+     * @param configPath cli 通过 agentArgs 传入的配置文件路径。
+     *                   cli 端已转为绝对路径（基准=cli CWD），此处保留对相对路径的兼容
+     *                   （以 target JVM CWD 解析，仅作 fallback）。
      */
     public static HotFixConfig load(String configPath) throws IOException {
         if (configPath == null || configPath.isEmpty()) {
             throw new IOException("agentArgs (config path) is empty");
         }
-        File file = new File(configPath);
-        if (!file.isFile()) {
-            throw new IOException("config file not found: " + file.getAbsolutePath());
+        // config 文件：转绝对（防御性；正常由 cli 预先转好）
+        File configFile = new File(configPath).getAbsoluteFile();
+        if (!configFile.isFile()) {
+            throw new IOException("config file not found: " + configFile.getAbsolutePath());
         }
-        String json = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-        String patchJar = extractStringValue(json, "patchJar");
-        if (patchJar == null || patchJar.isEmpty()) {
-            throw new IOException("missing \"patchJar\" in config: " + file.getAbsolutePath());
+        String json = new String(Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8);
+        String patchJarRaw = extractStringValue(json, "patchJar");
+        if (patchJarRaw == null || patchJarRaw.isEmpty()) {
+            throw new IOException("missing \"patchJar\" in config: " + configFile.getAbsolutePath());
         }
-        return new HotFixConfig(patchJar);
+
+        // patchJar 相对/绝对判断与解析
+        File patchJarFile = new File(patchJarRaw);
+        if (!patchJarFile.isAbsolute()) {
+            File configDir = configFile.getParentFile();
+            if (configDir == null) {
+                throw new IOException(
+                        "cannot resolve relative patchJar, config has no parent dir: " + configFile);
+            }
+            patchJarFile = new File(configDir, patchJarRaw);
+        }
+        String patchJarAbs = patchJarFile.getAbsoluteFile().toString();
+        return new HotFixConfig(configFile, patchJarAbs);
     }
 
     /**
