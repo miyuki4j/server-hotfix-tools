@@ -27,7 +27,7 @@ public class HotFixCli {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            System.err.println("Usage: java -jar hotfix-cli.jar <pid> <agent.jar> <config.json>");
+            err("Usage: java -jar hotfix-cli.jar <pid> <agent.jar> <config.json>");
             System.exit(1);
         }
 
@@ -60,20 +60,28 @@ public class HotFixCli {
         }
         String patchJarAbs = patchJarFile.getAbsoluteFile().toString();
 
-        System.out.println("[hotfix-cli] Attaching to pid " + pid + " ...");
-        System.out.println("[hotfix-cli] Loading agent: " + agentJar);
-        System.out.println("[hotfix-cli] Config: " + configFile);
-        System.out.println("[hotfix-cli] Patch jar: " + patchJarAbs);
+        log("Attaching to pid " + pid + " ...");
+        log("Loading agent: " + agentJar);
+        log("Config: " + configFile);
+        log("Patch jar: " + patchJarAbs);
 
         // 1. Attach 到目标 JVM
         VirtualMachine vm = VirtualMachine.attach(pid);
         try {
             // 2. 加载 agent jar；把解析好的 patchJar 绝对路径作为 agentArgs 传给 agentmain
             vm.loadAgent(agentJar, patchJarAbs);
-            System.out.println("[hotfix-cli] Hotfix applied successfully.");
+            log("Hotfix applied successfully.");
         } finally {
             // 3. 断开连接
             vm.detach();
         }
+    }
+
+    private static void log(String msg) {
+        System.out.println("[hotfix-cli] " + msg);
+    }
+
+    private static void err(String msg) {
+        System.err.println("[hotfix-cli] " + msg);
     }
 }
