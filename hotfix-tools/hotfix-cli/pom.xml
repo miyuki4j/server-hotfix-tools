@@ -27,14 +27,6 @@
             <version>1.8</version>
             <scope>compile</scope>
         </dependency>
-        <!-- JSON 解析（解析 hotfix-config.json）。org.json 零依赖、~70KB，随 cli shade 进 jar；
-             cli 不注入目标 JVM，故不影响 GameServer 进程。 -->
-        <dependency>
-            <groupId>org.json</groupId>
-            <artifactId>json</artifactId>
-            <version>20240303</version>
-            <scope>compile</scope>
-        </dependency>
     </dependencies>
 
     <build>
@@ -54,7 +46,6 @@
                             <artifactSet>
                                 <includes>
                                     <include>com.sun:tools</include>
-                                    <include>org.json:json</include>
                                 </includes>
                             </artifactSet>
                             <filters>
