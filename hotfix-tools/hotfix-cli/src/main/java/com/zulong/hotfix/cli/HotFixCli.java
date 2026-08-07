@@ -1,49 +1,75 @@
 package com.zulong.hotfix.cli;
 
 import com.sun.tools.attach.VirtualMachine;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 /**
- * hotfix-cli 入口：Attach 到目标 JVM 并加载 hotfix-agent。
+ * hotfix-cli 入口：解析 config → Attach 到目标 JVM → 加载 hotfix-agent。
  *
  * 用法:
- *   java -jar hotfix-cli.jar <pid> <agent.jar> [config.json]
+ *   java -jar hotfix-cli.jar <pid> <agent.jar> <config.json>
  *
  * 说明:
  *  - 本进程是独立 JVM，通过 Attach API 连接目标 GameServer 进程。
  *  - 运行用户必须与目标进程同用户（或 root），目标 JVM 不能带 -XX:+DisableAttachMechanism。
- *  - cli jar 已内嵌 JDK8 tools.jar 的 attach API 类（shade），因此 JDK8 下可直接 java -jar 运行。
- *  - agentJar 和 config 路径若为相对路径，cli 会以自身 CWD（用户敲命令时的目录）为基准解析为绝对路径
- *    后再传给 agent，保证 agent 端能正确解析相对 patchJar（以 config 文件所在目录为基准）。
+ *  - cli jar 已内嵌 JDK8 tools.jar 的 attach API 类 + org.json（shade），JDK8 下可直接 java -jar 运行。
+ *  - JSON 解析在 cli 完成（cli 不注入目标 JVM，故 org.json 不进入 GameServer 进程）。
+ *    cli 解析 config 取出 patchJar，按相对/绝对规则解析为绝对路径后，作为 agentArgs 传给 agent。
+ *  - agentJar / config 相对路径以 cli CWD 为基准；patchJar 相对路径以 config 文件所在目录为基准。
  */
 public class HotFixCli {
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
-            System.err.println("Usage: java -jar hotfix-cli.jar <pid> <agent.jar> [config.json]");
+        if (args.length < 3) {
+            System.err.println("Usage: java -jar hotfix-cli.jar <pid> <agent.jar> <config.json>");
             System.exit(1);
         }
 
         String pid = args[0];
-        // 相对路径 → 以 cli CWD 为基准解析为绝对路径
+        // agentJar 相对路径 → 以 cli CWD 为基准解析为绝对
         String agentJar = new File(args[1]).getAbsoluteFile().toString();
-        String config = args.length > 2
-                ? new File(args[2]).getAbsoluteFile().toString()
-                : "";
+        // config 相对路径 → 以 cli CWD 为基准解析为绝对
+        File configFile = new File(args[2]).getAbsoluteFile();
+        if (!configFile.isFile()) {
+            throw new IOException("config file not found: " + configFile.getAbsolutePath());
+        }
+
+        // 解析 config.json（org.json），取出 patchJar 并解析为绝对路径
+        String json = new String(Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8);
+        JSONObject obj = new JSONObject(json);
+        String patchJarRaw;
+        try {
+            patchJarRaw = obj.getString("patchJar");
+        } catch (JSONException e) {
+            throw new IOException("missing \"patchJar\" in config: " + configFile.getAbsolutePath(), e);
+        }
+        File patchJarFile = new File(patchJarRaw);
+        if (!patchJarFile.isAbsolute()) {
+            // 相对路径以 config 文件所在目录为基准
+            File configDir = configFile.getParentFile();
+            if (configDir == null) {
+                throw new IOException("cannot resolve relative patchJar: config has no parent dir: " + configFile);
+            }
+            patchJarFile = new File(configDir, patchJarRaw);
+        }
+        String patchJarAbs = patchJarFile.getAbsoluteFile().toString();
 
         System.out.println("[hotfix-cli] Attaching to pid " + pid + " ...");
+        System.out.println("[hotfix-cli] Loading agent: " + agentJar);
+        System.out.println("[hotfix-cli] Config: " + configFile);
+        System.out.println("[hotfix-cli] Patch jar: " + patchJarAbs);
 
         // 1. Attach 到目标 JVM
         VirtualMachine vm = VirtualMachine.attach(pid);
         try {
-            // 2. 加载 agent jar 到目标 JVM 内
-            //    config 路径会作为 agentArgs 传给 agentmain(String, Instrumentation)
-            System.out.println("[hotfix-cli] Loading agent: " + agentJar);
-            if (!config.isEmpty()) {
-                System.out.println("[hotfix-cli] Config: " + config);
-            }
-            vm.loadAgent(agentJar, config);
+            // 2. 加载 agent jar；把解析好的 patchJar 绝对路径作为 agentArgs 传给 agentmain
+            vm.loadAgent(agentJar, patchJarAbs);
             System.out.println("[hotfix-cli] Hotfix applied successfully.");
         } finally {
             // 3. 断开连接

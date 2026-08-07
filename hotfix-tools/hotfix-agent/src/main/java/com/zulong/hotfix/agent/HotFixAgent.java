@@ -19,7 +19,7 @@ import java.util.jar.JarFile;
  * hotfix-agent 核心：自动区分新老类并完成热更新。
  * <p>
  * 流程:
- * 1. 解析 hotfix-config.json，拿到 patch.jar 路径
+ * 1. 接收 cli 传来的 patch.jar 绝对路径（agentArgs，由 cli 解析 config 后得到）
  * 2. 扫描 patch.jar 中所有 .class 文件
  * 3. 用 Instrumentation.getAllLoadedClasses() 区分新老类
  * - 已加载 → 旧类 → redefineClasses 替换方法体
@@ -34,8 +34,11 @@ public class HotFixAgent {
     public static void agentmain(String agentArgs, Instrumentation inst) throws Exception {
         log("=== Hotfix Agent Start ===");
 
-        HotFixConfig config = HotFixConfig.load(agentArgs);
-        File patchJar = new File(config.getPatchJar());
+        // agentArgs 是 cli 解析 config 后传来的 patch.jar 绝对路径
+        if (agentArgs == null || agentArgs.isEmpty()) {
+            throw new IOException("agentArgs (patch jar path) is empty");
+        }
+        File patchJar = new File(agentArgs).getAbsoluteFile();
         if (!patchJar.isFile()) {
             throw new FileNotFoundException("patch jar not found: " + patchJar.getAbsolutePath());
         }
