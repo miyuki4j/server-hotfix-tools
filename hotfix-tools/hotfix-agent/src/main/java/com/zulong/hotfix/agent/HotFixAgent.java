@@ -70,8 +70,10 @@ public class HotFixAgent {
 
         // 3. append patch.jar 到 AppClassLoader 搜索路径
         //    必须在 redefine 之前: redefine 验证字节码时可能需要加载被引用的新类
-        inst.appendToSystemClassLoaderSearch(new JarFile(patchJar));
-        log("Appended patch.jar to system classloader.");
+        if (newClasses.isEmpty()) {
+            inst.appendToSystemClassLoaderSearch(new JarFile(patchJar));
+            log("Appended patch.jar to system classloader.");
+        }
 
         // 4. 新类: 预加载（显式触发, 提前发现错误; 否则等旧类方法体调用时才懒加载）
         for (String name : newClasses) {
@@ -88,11 +90,14 @@ public class HotFixAgent {
         //    JVMTI 限制: 只能改方法体/常量池, 不能加方法/字段/改签名/改继承
         if (!oldClasses.isEmpty()) {
             List<ClassDefinition> defs = new ArrayList<>();
-            for (String name : oldClasses) {
-                Class<?> clz = Class.forName(name, false, ClassLoader.getSystemClassLoader());
-                byte[] bytes = readClassFromJar(patchJar, name);
-                defs.add(new ClassDefinition(clz, bytes));
-                log("  Redefining: " + name + " (" + bytes.length + " bytes)");
+            // JarFile 只打开一次: 避免每个类都重复解析 jar 中央目录
+            try (JarFile jar = new JarFile(patchJar)) {
+                for (String name : oldClasses) {
+                    Class<?> clz = Class.forName(name, false, ClassLoader.getSystemClassLoader());
+                    byte[] bytes = readClassFromJar(jar, name);
+                    defs.add(new ClassDefinition(clz, bytes));
+                    log("  Redefining: " + name + " (" + bytes.length + " bytes)");
+                }
             }
             inst.redefineClasses(defs.toArray(new ClassDefinition[0]));
             log("Redefine done for " + defs.size() + " classes.");
@@ -121,24 +126,22 @@ public class HotFixAgent {
     }
 
     /**
-     * 从 jar 中读取指定 class 的字节码
+     * 从已打开的 jar 中读取指定 class 的字节码
      */
-    private static byte[] readClassFromJar(File jarFile, String className) throws IOException {
+    private static byte[] readClassFromJar(JarFile jar, String className) throws IOException {
         String entryName = className.replace('.', '/') + ".class";
-        try (JarFile jar = new JarFile(jarFile)) {
-            JarEntry entry = jar.getJarEntry(entryName);
-            if (entry == null) {
-                throw new FileNotFoundException("Class not found in jar: " + entryName);
+        JarEntry entry = jar.getJarEntry(entryName);
+        if (entry == null) {
+            throw new FileNotFoundException("Class not found in jar: " + entryName);
+        }
+        try (InputStream is = jar.getInputStream(entry)) {
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = is.read(buf)) != -1) {
+                bos.write(buf, 0, n);
             }
-            try (InputStream is = jar.getInputStream(entry)) {
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                byte[] buf = new byte[8192];
-                int n;
-                while ((n = is.read(buf)) != -1) {
-                    bos.write(buf, 0, n);
-                }
-                return bos.toByteArray();
-            }
+            return bos.toByteArray();
         }
     }
 
