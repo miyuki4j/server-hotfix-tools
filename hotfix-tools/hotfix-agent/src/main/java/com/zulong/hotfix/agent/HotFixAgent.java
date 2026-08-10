@@ -70,7 +70,7 @@ public class HotFixAgent {
 
         // 3. append patch.jar 到 AppClassLoader 搜索路径
         //    必须在 redefine 之前: redefine 验证字节码时可能需要加载被引用的新类
-        if (newClasses.isEmpty()) {
+        if (!newClasses.isEmpty()) {
             inst.appendToSystemClassLoaderSearch(new JarFile(patchJar));
             log("Appended patch.jar to system classloader.");
         }
